@@ -3,7 +3,7 @@
 A Linux-native SmartSDR-compatible client for FlexRadio Systems transceivers,
 built with **Qt6** and **C++20**.
 
-Current version: **0.1.1**
+Current version: **0.1.2**
 
 ---
 
@@ -24,8 +24,8 @@ Current version: **0.1.1**
 | Panadapter VITA-49 UDP stream receiver | ✅ |
 | Panadapter spectrum widget (FFT bins) | ✅ |
 | Panadapter dBm range auto-calibrated from radio | ✅ |
-| Audio RX via VITA-49 UDP + Qt Multimedia | ✅ |
-| Audio TX (microphone → radio) | ✅ |
+| Audio RX via VITA-49 PCC routing + Qt Multimedia | ✅ |
+| Audio TX (microphone → radio) | ⚠️ stub |
 | Volume / mute control | ✅ |
 | TX button | ✅ |
 | Persistent window geometry | ✅ |
@@ -41,8 +41,8 @@ src/
 │   ├── RadioDiscovery.h/.cpp    # UDP broadcast listener (port 4992)
 │   ├── RadioConnection.h/.cpp   # TCP command channel + heartbeat
 │   ├── CommandParser.h/.cpp     # Stateless line parser/builder
-│   ├── PanadapterStream.h/.cpp  # VITA-49 UDP FFT receiver
-│   └── AudioEngine.h/.cpp       # VITA-49 UDP → Qt Multimedia audio
+│   ├── PanadapterStream.h/.cpp  # VITA-49 UDP receiver — FFT + audio routing by PCC
+│   └── AudioEngine.h/.cpp       # Qt Multimedia audio sink (push-fed by PanadapterStream)
 ├── models/
 │   ├── RadioModel.h/.cpp        # Central radio state, owns connection
 │   └── SliceModel.h/.cpp        # Per-slice receiver state
@@ -66,14 +66,13 @@ src/
  Commands ◀────────   (QTcpSocket)       │
                    └─────────────────────┘
 
- UDP VITA-49       ┌─────────────────────┐
- ──────────────────▶  PanadapterStream   │──▶ SpectrumWidget (FFT display)
-                   └─────────────────────┘
-
- UDP audio         ┌─────────────────────┐
- ──────────────────▶   AudioEngine       │──▶ QAudioSink (speakers)
- Mic audio ◀───────   (VITA-49 framing)  │◀── QAudioSource (microphone)
-                   └─────────────────────┘
+ UDP VITA-49       ┌─────────────────────┐   FFT bins (PCC 0x8003)
+ ──────────────────▶  PanadapterStream   │──────────────────────────▶ SpectrumWidget
+  (port 4991)      │  routes by PCC      │   audio PCM  (PCC 0x03E3)
+                   └─────────────────────┘──────────────────────────▶ AudioEngine
+                                                                           │
+                                                                           ▼
+                                                                      QAudioSink
 ```
 
 ---
@@ -141,6 +140,8 @@ TCP connect to radio:4992
     → C|slice get 0
   ← S|...|slice 0 RF_frequency=14.100000 ...   (subscription push)
   ← S|...|display pan 0x40000000 center=14.1 bandwidth=0.2 min_dbm=-135 max_dbm=-40 ...
+  → C|stream create type=remote_audio_rx compression=none
+    ← R|0|<stream_id>       (radio starts sending VITA-49 audio to our UDP port)
 ```
 
 ### Firmware v1.4.0.0 quirks
@@ -155,8 +156,18 @@ TCP connect to radio:4992
 - **Panadapter bins** are **unsigned uint16**, linearly mapped:
   `dbm = min_dbm + (sample / 65535.0) × (max_dbm - min_dbm)`.
   The `min_dbm` / `max_dbm` values are broadcast in the `display pan` status message.
-- **VITA-49 packet type**: top byte `0x38` = panadapter FFT (Extension Data);
-  top byte `0x18` = audio/IF (skip these in the panadapter stream).
+- **VITA-49 packet type**: all FlexRadio streams (panadapter, audio, meters, waterfall)
+  use `ExtDataWithStream` (type 3, top nibble `0x3`). Audio is **not** `IFDataWithStream`.
+  Streams are discriminated by **PacketClassCode** (lower 16 bits of VITA-49 word 3):
+  - `0x03E3` — remote audio uncompressed (float32 stereo, big-endian)
+  - `0x0123` — DAX audio reduced-BW (int16 mono, big-endian)
+  - `0x8003` — panadapter FFT bins (uint16, big-endian)
+  - `0x8004` — waterfall
+  - `0x8002` — meter data
+- **Audio payload byte order**: float32 samples are big-endian; byte-swap the raw
+  `uint32` then `memcpy` to `float` before scaling to `int16` for QAudioSink.
+- **`stream create type=remote_audio_rx`** is the correct v1.4.0.0 command to start
+  RX audio. `audio set` / `audio client` do not exist and return `0x50000016`.
 - **Panadapter stream ID**: `0x04000009` (not `0x40000000` — that is the pan *object* ID).
 
 ### GUI↔radio frequency sync
@@ -168,12 +179,38 @@ model-driven dial updates back to the radio.
 
 ---
 
+## Changelog
+
+### v0.1.2
+- Fix audio streaming: route VITA-49 packets by PacketClassCode (PCC), not by
+  packet type — all FlexRadio streams use `ExtDataWithStream` (type 3)
+- Start RX audio with `stream create type=remote_audio_rx compression=none`
+  (replaces non-existent `audio set`/`audio client` commands)
+- Decode big-endian float32 stereo audio payload correctly for QAudioSink
+- Refactor `AudioEngine`: remove its own UDP socket; `PanadapterStream` owns
+  port 4991 and pushes decoded PCM via `feedAudioData()`
+- Fix double `configurePan` on connect (guard flag moved to `onConnected()`)
+
+### v0.1.1
+- Fix status parsing for multi-word object names (`slice 0`, `display pan 0x...`)
+- GUI↔radio frequency sync with feedback-loop guard
+- Click-to-tune (frequency dial top/bottom halves) and scroll-wheel tuning
+- Mode selector (USB/LSB/CW/AM/FM/DIG…) synced to radio
+
+### v0.1.0
+- UDP radio discovery (port 4992)
+- TCP command/control connection with SmartSDR V/H/R/S/M protocol
+- Panadapter VITA-49 UDP stream receiver and FFT spectrum display
+- Live dBm range calibration from `display pan` status messages
+
+---
+
 ## Next Steps
 
 - [ ] Waterfall display (scrolling `QImage` below the spectrum)
 - [ ] Slice filter passband shading on the spectrum
 - [ ] Multi-slice support (slice tabs or overlaid markers)
-- [ ] Audio RX via VITA-49 stream (pipe to `AudioEngine`)
+- [ ] Audio TX (microphone → radio, full VITA-49 framing)
 - [ ] Band stacking / band map
 
 ---
