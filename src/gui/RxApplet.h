@@ -12,14 +12,16 @@ class SliceModel;
 
 // RX Applet — controls for a single receive slice.
 //
-// Shows and controls:
-//  • RX antenna selector (ANT1/ANT2)
-//  • Filter width presets (1.8/2.1/2.4/2.7/3.3/6.0 kHz)
-//  • AGC mode (OFF/SLOW/MED/FAST)
+// Layout (top to bottom):
+//  • RX antenna selector (ANT1 / ANT2)
+//  • Filter width presets (1.8 / 2.1 / 2.4 / 2.7 / 3.3 / 6.0 kHz)
+//  • AGC mode (OFF / SLOW / MED / FAST)
+//  • AF gain slider (audio output level)
+//  • RF gain slider (IF gain)
 //  • Squelch on/off + level slider
 //  • DSP toggles: NB, NR, ANF
-//  • RIT on/off + Hz offset ±
-//  • XIT on/off + Hz offset ±
+//  • RIT on/off + Hz offset with < > step buttons
+//  • XIT on/off + Hz offset with < > step buttons
 class RxApplet : public QWidget {
     Q_OBJECT
 
@@ -29,6 +31,10 @@ public:
     // Attach to a slice; pass nullptr to detach.
     void setSlice(SliceModel* slice);
 
+signals:
+    // Emitted when the user adjusts the AF gain slider (0–100).
+    void afGainChanged(int value);
+
 private:
     void buildUI();
     void connectSlice(SliceModel* s);
@@ -37,19 +43,26 @@ private:
     void applyFilterPreset(int widthHz);
     void updateFilterButtons();
     void updateAgcButtons();
+    static QString formatHz(int hz);
 
     SliceModel* m_slice{nullptr};
 
     // ANT
-    QPushButton* m_antBtns[2]{};   // ANT1, ANT2
+    QPushButton* m_antBtns[2]{};   // [0]=ANT1  [1]=ANT2
 
-    // Filter presets (widths in Hz)
+    // Filter presets (Hz widths)
     static constexpr int FILTER_WIDTHS[6] = {1800, 2100, 2400, 2700, 3300, 6000};
     QPushButton* m_filterBtns[6]{};
 
-    // AGC mode buttons (off / slow / med / fast)
+    // AGC mode buttons (order: off / slow / med / fast)
     static constexpr const char* AGC_MODES[4] = {"off", "slow", "med", "fast"};
     QPushButton* m_agcBtns[4]{};
+
+    // AF / RF gain
+    QSlider*     m_afSlider{nullptr};
+    QLabel*      m_afLabel{nullptr};
+    QSlider*     m_rfSlider{nullptr};
+    QLabel*      m_rfLabel{nullptr};
 
     // Squelch
     QPushButton* m_sqlBtn{nullptr};
@@ -63,17 +76,15 @@ private:
 
     // RIT
     QPushButton* m_ritOnBtn{nullptr};
-    QLabel*      m_ritLabel{nullptr};
     QPushButton* m_ritMinus{nullptr};
+    QLabel*      m_ritLabel{nullptr};
     QPushButton* m_ritPlus{nullptr};
-    QPushButton* m_ritClear{nullptr};
 
     // XIT
     QPushButton* m_xitOnBtn{nullptr};
-    QLabel*      m_xitLabel{nullptr};
     QPushButton* m_xitMinus{nullptr};
+    QLabel*      m_xitLabel{nullptr};
     QPushButton* m_xitPlus{nullptr};
-    QPushButton* m_xitClear{nullptr};
 
     static constexpr int RIT_STEP_HZ = 10;
 };

@@ -3,6 +3,7 @@
 #include "ConnectionPanel.h"
 #include "SpectrumWidget.h"
 #include "AppletPanel.h"
+#include "RxApplet.h"
 #include "models/SliceModel.h"
 
 #include <QApplication>
@@ -81,6 +82,11 @@ MainWindow::MainWindow(QWidget* parent)
     // audioDataReady(); we feed that directly to the QAudioSink.
     connect(m_radioModel.panStream(), &PanadapterStream::audioDataReady,
             &m_audio, &AudioEngine::feedAudioData);
+
+    // ── AF gain from applet panel → audio engine ──────────────────────────
+    connect(m_appletPanel->rxApplet(), &RxApplet::afGainChanged, this, [this](int v) {
+        m_audio.setRxVolume(v / 100.0f);
+    });
 
     // ── Audio level meter ──────────────────────────────────────────────────
     connect(&m_audio, &AudioEngine::levelChanged,

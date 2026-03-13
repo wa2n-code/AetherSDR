@@ -22,6 +22,8 @@ public:
     // Attach the active slice to all slice-dependent applets.
     void setSlice(SliceModel* slice);
 
+    RxApplet* rxApplet() { return m_rxApplet; }
+
 private:
     QTabWidget* m_tabs{nullptr};
     RxApplet*   m_rxApplet{nullptr};

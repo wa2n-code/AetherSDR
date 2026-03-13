@@ -21,7 +21,7 @@ static QWidget* placeholder(const QString& text)
 
 AppletPanel::AppletPanel(QWidget* parent) : QWidget(parent)
 {
-    setFixedWidth(220);
+    setFixedWidth(240);
 
     auto* root = new QVBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);

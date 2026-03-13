@@ -17,20 +17,44 @@ static QFrame* hLine()
 {
     auto* f = new QFrame;
     f->setFrameShape(QFrame::HLine);
-    f->setFrameShadow(QFrame::Plain);
-    f->setStyleSheet("color: #203040;");
+    f->setStyleSheet("QFrame { color: #1e2e3e; }");
     return f;
 }
 
-static QPushButton* toggleBtn(const QString& text, QWidget* parent = nullptr)
+// Small checkable flat button used throughout the applet.
+static QPushButton* mkToggle(const QString& text, QWidget* parent = nullptr)
 {
     auto* b = new QPushButton(text, parent);
     b->setCheckable(true);
-    b->setFlat(true);
+    b->setFlat(false);         // keep border so "checked" state is clearly visible
     b->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    b->setFixedHeight(24);
+    b->setFixedHeight(26);
     return b;
 }
+
+// Small non-checkable step button (< / >).
+static QPushButton* mkStep(const QString& text, QWidget* parent = nullptr)
+{
+    auto* b = new QPushButton(text, parent);
+    b->setFlat(false);
+    b->setFixedSize(26, 26);
+    return b;
+}
+
+// Shared stylesheet: blue when checked (used for ANT, filter, AGC).
+static const QString kBlueActive =
+    "QPushButton:checked { background-color: #0070c0; color: #ffffff; "
+    "border: 1px solid #0090e0; }";
+
+// Green when checked (used for NB/NR/ANF and SQL).
+static const QString kGreenActive =
+    "QPushButton:checked { background-color: #006040; color: #00ff88; "
+    "border: 1px solid #00a060; }";
+
+// Amber when checked (used for RIT/XIT on/off).
+static const QString kAmberActive =
+    "QPushButton:checked { background-color: #604000; color: #ffb800; "
+    "border: 1px solid #906000; }";
 
 // ─── Construction ─────────────────────────────────────────────────────────────
 
@@ -41,29 +65,25 @@ RxApplet::RxApplet(QWidget* parent) : QWidget(parent)
 
 void RxApplet::buildUI()
 {
-    setMinimumWidth(200);
-
-    const QString activeStyle =
-        "QPushButton:checked { background-color: #0070c0; color: #ffffff; border: 1px solid #0090e0; }";
-    const QString dspActiveStyle =
-        "QPushButton:checked { background-color: #007050; color: #ffffff; border: 1px solid #00a070; }";
-    const QString ritActiveStyle =
-        "QPushButton:checked { background-color: #705000; color: #ffffff; border: 1px solid #a07000; }";
-
     auto* root = new QVBoxLayout(this);
     root->setContentsMargins(6, 6, 6, 6);
-    root->setSpacing(6);
+    root->setSpacing(5);
 
     // ── Antenna ───────────────────────────────────────────────────────────────
     {
         auto* row = new QHBoxLayout;
-        row->addWidget(new QLabel("ANT:"));
+        row->setSpacing(4);
+        auto* lbl = new QLabel("ANT:");
+        lbl->setFixedWidth(30);
+        row->addWidget(lbl);
+
         const char* labels[] = {"ANT1", "ANT2"};
         for (int i = 0; i < 2; ++i) {
-            m_antBtns[i] = toggleBtn(labels[i]);
-            m_antBtns[i]->setStyleSheet(activeStyle);
-            connect(m_antBtns[i], &QPushButton::clicked, this, [this, i](bool) {
-                if (m_slice) m_slice->setRxAntenna(i == 0 ? "ANT1" : "ANT2");
+            m_antBtns[i] = mkToggle(labels[i]);
+            m_antBtns[i]->setStyleSheet(kBlueActive);
+            const QString ant = (i == 0) ? "ANT1" : "ANT2";
+            connect(m_antBtns[i], &QPushButton::clicked, this, [this, ant](bool) {
+                if (m_slice) m_slice->setRxAntenna(ant);
             });
             row->addWidget(m_antBtns[i]);
         }
@@ -74,13 +94,16 @@ void RxApplet::buildUI()
 
     // ── Filter presets ────────────────────────────────────────────────────────
     {
-        root->addWidget(new QLabel("Filter:"));
+        auto* lbl = new QLabel("Filter:");
+        lbl->setStyleSheet("color: #708090; font-size: 11px;");
+        root->addWidget(lbl);
+
         auto* grid = new QGridLayout;
         grid->setSpacing(3);
         const char* labels[] = {"1.8K","2.1K","2.4K","2.7K","3.3K","6.0K"};
         for (int i = 0; i < 6; ++i) {
-            m_filterBtns[i] = toggleBtn(labels[i]);
-            m_filterBtns[i]->setStyleSheet(activeStyle);
+            m_filterBtns[i] = mkToggle(labels[i]);
+            m_filterBtns[i]->setStyleSheet(kBlueActive);
             const int w = FILTER_WIDTHS[i];
             connect(m_filterBtns[i], &QPushButton::clicked, this, [this, w](bool) {
                 applyFilterPreset(w);
@@ -95,11 +118,16 @@ void RxApplet::buildUI()
     // ── AGC mode ──────────────────────────────────────────────────────────────
     {
         auto* row = new QHBoxLayout;
-        row->addWidget(new QLabel("AGC:"));
+        row->setSpacing(3);
+        auto* lbl = new QLabel("AGC:");
+        lbl->setFixedWidth(34);
+        lbl->setStyleSheet("color: #708090; font-size: 11px;");
+        row->addWidget(lbl);
+
         const char* labels[] = {"Off","Slw","Med","Fst"};
         for (int i = 0; i < 4; ++i) {
-            m_agcBtns[i] = toggleBtn(labels[i]);
-            m_agcBtns[i]->setStyleSheet(activeStyle);
+            m_agcBtns[i] = mkToggle(labels[i]);
+            m_agcBtns[i]->setStyleSheet(kBlueActive);
             const QString mode = AGC_MODES[i];
             connect(m_agcBtns[i], &QPushButton::clicked, this, [this, mode](bool) {
                 if (m_slice) m_slice->setAgcMode(mode);
@@ -111,12 +139,50 @@ void RxApplet::buildUI()
 
     root->addWidget(hLine());
 
+    // ── AF / RF gain ──────────────────────────────────────────────────────────
+    auto mkGainRow = [&](const QString& labelText, QSlider*& slider, QLabel*& valLbl,
+                         int initVal) {
+        auto* row = new QHBoxLayout;
+        row->setSpacing(4);
+        auto* lbl = new QLabel(labelText);
+        lbl->setFixedWidth(18);
+        lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        row->addWidget(lbl);
+
+        slider = new QSlider(Qt::Horizontal);
+        slider->setRange(0, 100);
+        slider->setValue(initVal);
+        row->addWidget(slider, 1);
+
+        valLbl = new QLabel(QString::number(initVal));
+        valLbl->setFixedWidth(28);
+        valLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        row->addWidget(valLbl);
+        root->addLayout(row);
+    };
+
+    mkGainRow("AF", m_afSlider, m_afLabel, 70);
+    mkGainRow("RF", m_rfSlider, m_rfLabel, 0);
+
+    connect(m_afSlider, &QSlider::valueChanged, this, [this](int v) {
+        m_afLabel->setText(QString::number(v));
+        emit afGainChanged(v);
+    });
+    connect(m_rfSlider, &QSlider::valueChanged, this, [this](int v) {
+        m_rfLabel->setText(QString::number(v));
+        if (m_slice) m_slice->setRfGain(static_cast<float>(v));
+    });
+
+    root->addWidget(hLine());
+
     // ── Squelch ───────────────────────────────────────────────────────────────
     {
         auto* row = new QHBoxLayout;
-        m_sqlBtn = toggleBtn("SQL");
-        m_sqlBtn->setFixedWidth(40);
-        m_sqlBtn->setStyleSheet(dspActiveStyle);
+        row->setSpacing(4);
+
+        m_sqlBtn = mkToggle("SQL");
+        m_sqlBtn->setFixedWidth(44);
+        m_sqlBtn->setStyleSheet(kGreenActive);
         row->addWidget(m_sqlBtn);
 
         m_sqlSlider = new QSlider(Qt::Horizontal);
@@ -146,11 +212,14 @@ void RxApplet::buildUI()
     // ── DSP toggles ───────────────────────────────────────────────────────────
     {
         auto* row = new QHBoxLayout;
-        m_nbBtn  = toggleBtn("NB");
-        m_nrBtn  = toggleBtn("NR");
-        m_anfBtn = toggleBtn("ANF");
+        row->setSpacing(4);
+
+        m_nbBtn  = mkToggle("NB");
+        m_nrBtn  = mkToggle("NR");
+        m_anfBtn = mkToggle("ANF");
+
         for (auto* b : {m_nbBtn, m_nrBtn, m_anfBtn})
-            b->setStyleSheet(dspActiveStyle);
+            b->setStyleSheet(kGreenActive);
 
         connect(m_nbBtn,  &QPushButton::toggled, this, [this](bool on) {
             if (m_slice) m_slice->setNb(on);
@@ -173,30 +242,26 @@ void RxApplet::buildUI()
     // ── RIT ───────────────────────────────────────────────────────────────────
     {
         auto* row = new QHBoxLayout;
-        m_ritOnBtn = toggleBtn("RIT");
-        m_ritOnBtn->setFixedWidth(36);
-        m_ritOnBtn->setStyleSheet(ritActiveStyle);
+        row->setSpacing(4);
+
+        m_ritOnBtn = mkToggle("RIT");
+        m_ritOnBtn->setFixedWidth(38);
+        m_ritOnBtn->setStyleSheet(kAmberActive);
         row->addWidget(m_ritOnBtn);
 
-        m_ritMinus = new QPushButton("−");
-        m_ritMinus->setFixedSize(22, 22);
-        m_ritMinus->setFlat(true);
+        m_ritMinus = mkStep("<");
         row->addWidget(m_ritMinus);
 
         m_ritLabel = new QLabel("0 Hz");
         m_ritLabel->setAlignment(Qt::AlignCenter);
-        m_ritLabel->setMinimumWidth(54);
+        m_ritLabel->setMinimumWidth(60);
+        m_ritLabel->setStyleSheet(
+            "QLabel { background: #0a0a18; border: 1px solid #1e2e3e; "
+            "border-radius: 3px; padding: 2px 4px; }");
         row->addWidget(m_ritLabel, 1);
 
-        m_ritPlus = new QPushButton("+");
-        m_ritPlus->setFixedSize(22, 22);
-        m_ritPlus->setFlat(true);
+        m_ritPlus = mkStep(">");
         row->addWidget(m_ritPlus);
-
-        m_ritClear = new QPushButton("CLR");
-        m_ritClear->setFixedWidth(34);
-        m_ritClear->setFlat(true);
-        row->addWidget(m_ritClear);
 
         root->addLayout(row);
 
@@ -211,39 +276,31 @@ void RxApplet::buildUI()
             if (!m_slice) return;
             m_slice->setRit(m_ritOnBtn->isChecked(), m_slice->ritFreq() + RIT_STEP_HZ);
         });
-        connect(m_ritClear, &QPushButton::clicked, this, [this] {
-            if (!m_slice) return;
-            m_slice->setRit(m_ritOnBtn->isChecked(), 0);
-        });
     }
 
     // ── XIT ───────────────────────────────────────────────────────────────────
     {
         auto* row = new QHBoxLayout;
-        m_xitOnBtn = toggleBtn("XIT");
-        m_xitOnBtn->setFixedWidth(36);
-        m_xitOnBtn->setStyleSheet(ritActiveStyle);
+        row->setSpacing(4);
+
+        m_xitOnBtn = mkToggle("XIT");
+        m_xitOnBtn->setFixedWidth(38);
+        m_xitOnBtn->setStyleSheet(kAmberActive);
         row->addWidget(m_xitOnBtn);
 
-        m_xitMinus = new QPushButton("−");
-        m_xitMinus->setFixedSize(22, 22);
-        m_xitMinus->setFlat(true);
+        m_xitMinus = mkStep("<");
         row->addWidget(m_xitMinus);
 
         m_xitLabel = new QLabel("0 Hz");
         m_xitLabel->setAlignment(Qt::AlignCenter);
-        m_xitLabel->setMinimumWidth(54);
+        m_xitLabel->setMinimumWidth(60);
+        m_xitLabel->setStyleSheet(
+            "QLabel { background: #0a0a18; border: 1px solid #1e2e3e; "
+            "border-radius: 3px; padding: 2px 4px; }");
         row->addWidget(m_xitLabel, 1);
 
-        m_xitPlus = new QPushButton("+");
-        m_xitPlus->setFixedSize(22, 22);
-        m_xitPlus->setFlat(true);
+        m_xitPlus = mkStep(">");
         row->addWidget(m_xitPlus);
-
-        m_xitClear = new QPushButton("CLR");
-        m_xitClear->setFixedWidth(34);
-        m_xitClear->setFlat(true);
-        row->addWidget(m_xitClear);
 
         root->addLayout(row);
 
@@ -257,10 +314,6 @@ void RxApplet::buildUI()
         connect(m_xitPlus, &QPushButton::clicked, this, [this] {
             if (!m_slice) return;
             m_slice->setXit(m_xitOnBtn->isChecked(), m_slice->xitFreq() + RIT_STEP_HZ);
-        });
-        connect(m_xitClear, &QPushButton::clicked, this, [this] {
-            if (!m_slice) return;
-            m_slice->setXit(m_xitOnBtn->isChecked(), 0);
         });
     }
 
@@ -278,32 +331,41 @@ void RxApplet::setSlice(SliceModel* slice)
 
 void RxApplet::connectSlice(SliceModel* s)
 {
-    // Sync all state from the model immediately
     // Antenna
     {
-        const bool ant1 = (s->rxAntenna() == "ANT1");
+        const bool ant1 = (s->rxAntenna() != "ANT2");
+        QSignalBlocker b0(m_antBtns[0]), b1(m_antBtns[1]);
         m_antBtns[0]->setChecked(ant1);
         m_antBtns[1]->setChecked(!ant1);
     }
     connect(s, &SliceModel::rxAntennaChanged, this, [this](const QString& ant) {
-        m_antBtns[0]->setChecked(ant == "ANT1");
+        QSignalBlocker b0(m_antBtns[0]), b1(m_antBtns[1]);
+        m_antBtns[0]->setChecked(ant != "ANT2");
         m_antBtns[1]->setChecked(ant == "ANT2");
     });
 
     // Filter
+    updateFilterButtons();
     connect(s, &SliceModel::filterChanged, this, [this](int, int) {
         updateFilterButtons();
     });
-    updateFilterButtons();
 
     // AGC
+    updateAgcButtons();
     connect(s, &SliceModel::agcModeChanged, this, [this](const QString&) {
         updateAgcButtons();
     });
-    updateAgcButtons();
+
+    // RF gain
+    {
+        QSignalBlocker b(m_rfSlider);
+        m_rfSlider->setValue(static_cast<int>(s->rfGain()));
+        m_rfLabel->setText(QString::number(static_cast<int>(s->rfGain())));
+    }
 
     // Squelch
     {
+        QSignalBlocker b1(m_sqlBtn), b2(m_sqlSlider);
         m_sqlBtn->setChecked(s->squelchOn());
         m_sqlSlider->setValue(s->squelchLevel());
         m_sqlLabel->setText(QString::number(s->squelchLevel()));
@@ -315,39 +377,45 @@ void RxApplet::connectSlice(SliceModel* s)
         m_sqlLabel->setText(QString::number(level));
     });
 
-    // DSP
+    // DSP toggles
     {
         QSignalBlocker b1(m_nbBtn), b2(m_nrBtn), b3(m_anfBtn);
         m_nbBtn->setChecked(s->nbOn());
         m_nrBtn->setChecked(s->nrOn());
         m_anfBtn->setChecked(s->anfOn());
     }
-    connect(s, &SliceModel::nbChanged,  this, [this](bool on) { QSignalBlocker b(m_nbBtn);  m_nbBtn->setChecked(on); });
-    connect(s, &SliceModel::nrChanged,  this, [this](bool on) { QSignalBlocker b(m_nrBtn);  m_nrBtn->setChecked(on); });
-    connect(s, &SliceModel::anfChanged, this, [this](bool on) { QSignalBlocker b(m_anfBtn); m_anfBtn->setChecked(on); });
+    connect(s, &SliceModel::nbChanged,  this, [this](bool on) {
+        QSignalBlocker b(m_nbBtn);  m_nbBtn->setChecked(on);
+    });
+    connect(s, &SliceModel::nrChanged,  this, [this](bool on) {
+        QSignalBlocker b(m_nrBtn);  m_nrBtn->setChecked(on);
+    });
+    connect(s, &SliceModel::anfChanged, this, [this](bool on) {
+        QSignalBlocker b(m_anfBtn); m_anfBtn->setChecked(on);
+    });
 
     // RIT
     {
         QSignalBlocker b(m_ritOnBtn);
         m_ritOnBtn->setChecked(s->ritOn());
-        m_ritLabel->setText(QString("%1 Hz").arg(s->ritFreq()));
+        m_ritLabel->setText(formatHz(s->ritFreq()));
     }
     connect(s, &SliceModel::ritChanged, this, [this](bool on, int hz) {
         QSignalBlocker b(m_ritOnBtn);
         m_ritOnBtn->setChecked(on);
-        m_ritLabel->setText(QString("%1 Hz").arg(hz));
+        m_ritLabel->setText(formatHz(hz));
     });
 
     // XIT
     {
         QSignalBlocker b(m_xitOnBtn);
         m_xitOnBtn->setChecked(s->xitOn());
-        m_xitLabel->setText(QString("%1 Hz").arg(s->xitFreq()));
+        m_xitLabel->setText(formatHz(s->xitFreq()));
     }
     connect(s, &SliceModel::xitChanged, this, [this](bool on, int hz) {
         QSignalBlocker b(m_xitOnBtn);
         m_xitOnBtn->setChecked(on);
-        m_xitLabel->setText(QString("%1 Hz").arg(hz));
+        m_xitLabel->setText(formatHz(hz));
     });
 }
 
@@ -356,7 +424,12 @@ void RxApplet::disconnectSlice(SliceModel* s)
     s->disconnect(this);
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Private helpers ──────────────────────────────────────────────────────────
+
+QString RxApplet::formatHz(int hz)
+{
+    return (hz >= 0 ? "+" : "") + QString::number(hz) + " Hz";
+}
 
 void RxApplet::applyFilterPreset(int widthHz)
 {
@@ -369,7 +442,7 @@ void RxApplet::applyFilterPreset(int widthHz)
         lo = -widthHz;
         hi = 0;
     } else if (mode == "CW") {
-        // CW: filter centred 200 Hz above carrier (typical 600 Hz pitch)
+        // Centred 200 Hz above carrier (600 Hz sidetone pitch)
         lo = 200;
         hi = 200 + widthHz;
     } else {
@@ -383,14 +456,11 @@ void RxApplet::applyFilterPreset(int widthHz)
 
 void RxApplet::updateFilterButtons()
 {
-    if (!m_slice) {
-        for (auto* b : m_filterBtns) { QSignalBlocker sb(b); b->setChecked(false); }
-        return;
-    }
-    const int width = m_slice->filterHigh() - m_slice->filterLow();
+    const int width = m_slice ? (m_slice->filterHigh() - m_slice->filterLow()) : -1;
     for (int i = 0; i < 6; ++i) {
         QSignalBlocker sb(m_filterBtns[i]);
-        m_filterBtns[i]->setChecked(std::abs(width - FILTER_WIDTHS[i]) <= 150);
+        m_filterBtns[i]->setChecked(width >= 0 &&
+                                    std::abs(width - FILTER_WIDTHS[i]) <= 150);
     }
 }
 
